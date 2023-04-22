@@ -15,6 +15,7 @@ var (
 	providerConnections chan net.Conn
 )
 
+//Parse command line flags
 func init() {
 	flag.StringVar(&mode, "mode", "proxy", "the mode that is started 'proxy' or 'provider' (default: proxy)")
 	flag.IntVar(&connectionCount, "connectionCount", 5, "amount of connections keept ready")
@@ -22,6 +23,12 @@ func init() {
 	flag.StringVar(&proxyAddress, "providerAddress", ":9887", "the interface:port the provider connects to")
 }
 
+/* 
+Run goreproxy. 
+Depending in the mode flag this either starts the Proxy or the Provider.
+
+Note to devs: both use the same flags and vars but for different purposes.
+*/
 func main() {
 	flag.Parse()
 	providerConnections = make(chan net.Conn, connectionCount)
@@ -33,6 +40,7 @@ func main() {
 	}
 }
 
+// Start the Proxy that listens for incoming Connections from Providers and clients
 func startProxy() {
 	fmt.Println("Starting reproxy on:", exposeAddress, " waiting for provider on:", proxyAddress)
 	go startListening(handleExposed, exposeAddress)
