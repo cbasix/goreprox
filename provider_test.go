@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/gob"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -26,20 +27,22 @@ func TestHandleProxyConnection(t *testing.T) {
 
 	if data[0] != 'o' {
 		t.Errorf("got %q, wanted %q", data[0], 'o')
+	} else {
+		fmt.Println("THPC ok")
 	}
 }
 
 func TestJoinToShared(t *testing.T) {
 	//clearContext()
-	shared1, shared2 := net.Pipe()
-	private1, private2 := net.Pipe()
-	stop := make(chan bool)
+	sharedIn, sharedOut := net.Pipe()
+	privateIn, privateOut := net.Pipe()
+	stop := make(chan bool, 1)
 
-	go private2.Write([]byte{'u', 'l'})
-	go joinToShared(0, private1, shared1, stop)
+	go privateIn.Write([]byte{'u', 'l'})
+	go joinToShared(0, privateOut, sharedIn, stop)
 
 	var frm Frame
-	dec := gob.NewDecoder(shared2)
+	dec := gob.NewDecoder(sharedOut)
 	err := dec.Decode(&frm)
 	if err != nil {
 		panic(err)
@@ -49,5 +52,7 @@ func TestJoinToShared(t *testing.T) {
 
 	if frm.Data[0] != 'u' {
 		t.Errorf("got %q, wanted %q", frm.Data[0], 'u')
+	} else {
+		fmt.Println("TJTS ok")
 	}
 }
