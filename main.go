@@ -1,11 +1,6 @@
 package main
 
-import (
-	"flag"
-	"fmt"
-	"io"
-	"net"
-)
+import "net"
 
 var (
 	mode                string
@@ -15,6 +10,7 @@ var (
 	providerConnections chan net.Conn
 )
 
+/*
 //Parse command line flags
 func init() {
 	flag.StringVar(&mode, "mode", "proxy", "the mode that is started 'proxy' or 'provider' (default: proxy)")
@@ -23,12 +19,12 @@ func init() {
 	flag.StringVar(&proxyAddress, "providerAddress", ":9887", "the interface:port the provider connects to")
 }
 
-/* 
-Run goreproxy. 
+/*
+Run goreproxy.
 Depending in the mode flag this either starts the Proxy or the Provider.
 
 Note to devs: both use the same flags and vars but for different purposes.
-*/
+
 func main() {
 	flag.Parse()
 	providerConnections = make(chan net.Conn, connectionCount)
@@ -45,24 +41,6 @@ func startProxy() {
 	fmt.Println("Starting reproxy on:", exposeAddress, " waiting for provider on:", proxyAddress)
 	go startListening(handleExposed, exposeAddress)
 	startListening(handleProvider, proxyAddress)
-}
-
-type connHandler func(net.Conn)
-
-func startListening(ch connHandler, port string) {
-	ln, err := net.Listen("tcp", port)
-	if err != nil {
-		panic(err)
-	}
-
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			panic(err)
-		}
-
-		go ch(conn)
-	}
 }
 
 func handleProvider(conn net.Conn) {
@@ -109,3 +87,4 @@ func copyIO(src, dest net.Conn) {
 	defer fmt.Println("Conn closed:", dest.RemoteAddr().String())
 	io.Copy(src, dest)
 }
+*/
