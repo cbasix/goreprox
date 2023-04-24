@@ -8,19 +8,21 @@ import (
 
 func TestPacked(t *testing.T) {
 	var buf bytes.Buffer
-	frames := make(chan Frame, 1)
+	out := make(chan Frame, 1)
+	in := make(chan Frame, 1)
 
 	frame := Frame{
 		ConnectionId:   0,
 		DropConnection: true,
 		Data:           []byte{'i', 'o'},
 	}
-	frames <- frame
+	out <- frame
+	close(out)
 
-	go packedWriter(&buf, frames)
-	go packedReader(&buf, frames)
+	packedWriter(&buf, out)
+	packedReader(&buf, in)
 
-	retrieved := <-frames
+	retrieved := <-in
 
 	if fmt.Sprintf("%+v", retrieved) != fmt.Sprintf("%+v", frame) {
 		t.Errorf("Rounttrip changed something. Expected %+v got %+v", frame, retrieved)

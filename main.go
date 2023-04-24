@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"net"
 	"sync"
 )
@@ -33,7 +34,7 @@ Run goreproxy.
 Depending in the mode flag this either starts the Proxy or the Provider.
 
 Note to devs: both use the same flags and vars but for different purposes.
-
+*/
 func main() {
 	flag.Parse()
 	providerConnections = make(chan net.Conn, connectionCount)
@@ -41,17 +42,28 @@ func main() {
 	if mode == "proxy" {
 		startProxy()
 	} else {
-		startProvider()
+		//startProvider()
 	}
 }
 
 // Start the Proxy that listens for incoming Connections from Providers and clients
 func startProxy() {
 	fmt.Println("Starting reproxy on:", exposeAddress, " waiting for provider on:", proxyAddress)
-	go startListening(handleExposed, exposeAddress)
-	startListening(handleProvider, proxyAddress)
+	var sharedConn net.Conn
+	sharedIn := make(chan Frame, 20)
+	sharedOut := make(chan Frame, 20)
+
+	go packedWriter(sharedConn, sharedOut)
+	go packedReader(sharedConn, sharedIn)
+
+	router := CreateRouter(sharedIn, sharedOut)
+
+	go router.join()
+	//go startListening(handleExposed, exposeAddress)
+	//startListening(handleProvider, proxyAddress)
 }
 
+/*
 func handleProvider(conn net.Conn) {
 	fmt.Println("New provider connection: ", conn.RemoteAddr().String())
 	providerConnections <- conn

@@ -13,10 +13,19 @@ func unpackedReader(in io.Reader, frames chan<- Frame) {
 	for {
 		read, err := in.Read(buf)
 
-		frames <- Frame{
-			ConnectionId:   0, // will be set later on
-			DropConnection: err == io.EOF,
-			Data:           buf[:read],
+		if err != nil && err != io.EOF {
+			panic(err)
+		}
+		if read > 0 {
+			frames <- Frame{
+				ConnectionId:   0, // will be set later on
+				DropConnection: err == io.EOF,
+				Data:           buf[:read],
+			}
+		}
+
+		if err == io.EOF {
+			break
 		}
 	}
 }

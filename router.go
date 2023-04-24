@@ -10,37 +10,39 @@ import (
 //             packedWriter  <-Frame-       -> Frame UnpackedWriter
 
 type Router struct {
-	shared        chan Frame
+	sharedIn      chan Frame
+	sharedOut     chan Frame
 	destinations  map[uint]chan Frame
-	destMutex     sync.RWMutex
+	destMutex     *sync.RWMutex
 	connIdCounter uint
 }
 
-func CreateRouter(shared chan Frame) Router {
-	return Router{
-		shared:        shared,
+func CreateRouter(sharedIn chan Frame, sharedOut chan Frame) *Router {
+	return &Router{
+		sharedIn:      sharedIn,
+		sharedOut:     sharedOut,
 		destinations:  make(map[uint]chan Frame),
-		destMutex:     sync.RWMutex{},
+		destMutex:     new(sync.RWMutex),
 		connIdCounter: 0,
 	}
 }
 
-func (r Router) route() {
+func (r *Router) route() {
 	for {
-		frame := <-r.shared
-		target, found := r.destinations[frame.ConnectionId]
+		frame := <-r.sharedIn
+		target, found := r.getDest(frame.ConnectionId)
 
 		if !found {
-			panic(fmt.Sprintf("connection with id %d not found", frame.ConnectionId))
+			panic(fmt.Sprintf("connection with id %d not found in destinations: %+v", frame.ConnectionId, r.destinations))
 		}
 
 		target <- frame
 	}
 }
 
-func (r Router) routeOrCreate(createConnection func() chan Frame) {
+func (r *Router) routeOrCreate(createConnection func() chan Frame) {
 	for {
-		frame := <-r.shared
+		frame := <-r.sharedIn
 		target, found := r.getDest(frame.ConnectionId)
 
 		if !found {
@@ -54,16 +56,20 @@ func (r Router) routeOrCreate(createConnection func() chan Frame) {
 }
 
 /* Reads all destinations frames and forwards them to the shared connection. */
-func (r Router) join() {
+func (r *Router) join() {
+	r.destMutex.RLock()
+	defer r.destMutex.RUnlock()
+	// TODO fix locking here
+	// TODO endless loop
 	for connId, frames := range r.destinations {
 		frm := <-frames
 		frm.ConnectionId = connId
-		r.shared <- frm
+		r.sharedOut <- frm
 	}
 }
 
 // make map get access threadsafe
-func (r Router) getDest(connId uint) (chan Frame, bool) {
+func (r *Router) getDest(connId uint) (chan Frame, bool) {
 	r.destMutex.RLock()
 	defer r.destMutex.RUnlock()
 
@@ -72,7 +78,7 @@ func (r Router) getDest(connId uint) (chan Frame, bool) {
 }
 
 // make map put threadsafe
-func (r Router) createDest(frames chan Frame) uint {
+func (r *Router) createDest(frames chan Frame) uint {
 	r.destMutex.Lock()
 	defer r.destMutex.Unlock()
 
@@ -83,7 +89,7 @@ func (r Router) createDest(frames chan Frame) uint {
 }
 
 // make map delete threadsafe
-func (r Router) delDest(connId uint) {
+func (r *Router) delDest(connId uint) {
 	r.destMutex.Lock()
 	defer r.destMutex.Unlock()
 
