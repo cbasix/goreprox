@@ -1,6 +1,10 @@
 package main
 
-import "net"
+import (
+	"flag"
+	"net"
+	"sync"
+)
 
 var (
 	mode                string
@@ -10,8 +14,13 @@ var (
 	providerConnections chan net.Conn
 )
 
-/*
-//Parse command line flags
+var (
+	newConnections = make(chan net.Conn)
+	connections    = make(map[uint]net.Conn)
+	mutex          = new(sync.RWMutex)
+)
+
+// Parse command line flags
 func init() {
 	flag.StringVar(&mode, "mode", "proxy", "the mode that is started 'proxy' or 'provider' (default: proxy)")
 	flag.IntVar(&connectionCount, "connectionCount", 5, "amount of connections keept ready")
