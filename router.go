@@ -2,74 +2,107 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"sync"
 )
 
-//                          		 connList
-// -net.Conn-> packedReader -Frame-> Router <-Frame +UnpackedReader
-//             packedWriter  <-Frame-       -> Frame UnpackedWriter
-
 type Router struct {
-	sharedIn      chan Frame
-	sharedOut     chan Frame
-	destinations  map[uint]chan Frame
-	destMutex     *sync.RWMutex
-	connIdCounter uint
+	shared           *ChannelConn
+	destinations     map[uint]*ChannelConn
+	destMutex        *sync.RWMutex
+	connIdCounter    uint
+	createConnection func() *ChannelConn
 }
 
-func CreateRouter(sharedIn chan Frame, sharedOut chan Frame) *Router {
+func CreateRouter(shared *ChannelConn) *Router {
 	return &Router{
-		sharedIn:      sharedIn,
-		sharedOut:     sharedOut,
-		destinations:  make(map[uint]chan Frame),
+		shared:        shared,
+		destinations:  make(map[uint]*ChannelConn),
 		destMutex:     new(sync.RWMutex),
 		connIdCounter: 0,
 	}
 }
 
+/*
+	Reads one frame from the shared connection and forwards it to the correct connection.
+
+If no matching connection exists it tries to create a new one via the createConnection function set on the router.
+If createConnection is not set on the router it panics.
+*/
 func (r *Router) route() {
-	for {
-		frame := <-r.sharedIn
-		target, found := r.getDest(frame.ConnectionId)
+	frame := <-r.shared.in
+	target, found := r.getDest(frame.ConnectionId)
 
+	// forward fram only when it has data
+	if len(frame.Data) > 0 {
 		if !found {
-			panic(fmt.Sprintf("connection with id %d not found in destinations: %+v", frame.ConnectionId, r.destinations))
+			if r.createConnection == nil {
+				panic(fmt.Sprintf("connection with id %d not found in destinations: %+v", frame.ConnectionId, r.destinations))
+			} else {
+				target = r.createConnection()
+				connId := r.createDest(target)
+				frame.ConnectionId = connId
+			}
 		}
+		target.out <- frame
+	}
 
-		target <- frame
+	// close connection if ordered to do so
+	if found && frame.DropConnection {
+		close(target.out)
+		target.conn.Close()
+		r.delDest(frame.ConnectionId)
 	}
 }
 
-func (r *Router) routeOrCreate(createConnection func() chan Frame) {
-	for {
-		frame := <-r.sharedIn
-		target, found := r.getDest(frame.ConnectionId)
-
-		if !found {
-			target = createConnection()
-			connId := r.createDest(target)
-			frame.ConnectionId = connId
-		}
-
-		target <- frame
-	}
-}
-
-/* Reads all destinations frames and forwards them to the shared connection. */
+/* Reads one frame from all destinations and forwards them to the shared connection. */
 func (r *Router) join() {
 	r.destMutex.RLock()
 	defer r.destMutex.RUnlock()
-	// TODO fix locking here
-	// TODO endless loop
+
+	var wg sync.WaitGroup
 	for connId, frames := range r.destinations {
-		frm := <-frames
-		frm.ConnectionId = connId
-		r.sharedOut <- frm
+		if frames.closed {
+			continue
+		}
+		wg.Add(1)
+		go func(connId uint, frames *ChannelConn) {
+			defer wg.Done()
+
+			select {
+			case frm, more := <-frames.in:
+				if frames.closed {
+					return
+				}
+				if more {
+					frm.ConnectionId = connId
+					r.shared.out <- frm
+				} else {
+					r.destMutex.RUnlock()
+					r.destMutex.Lock()
+					if frames.closed {
+						return
+					}
+					frames.closed = true
+
+					log.Print("conn closed send")
+					r.shared.out <- Frame{
+						ConnectionId:   connId,
+						DropConnection: true,
+					}
+
+					r.destMutex.Unlock()
+					r.destMutex.RLock()
+				}
+			default:
+			}
+		}(connId, frames)
 	}
+	wg.Wait()
 }
 
 // make map get access threadsafe
-func (r *Router) getDest(connId uint) (chan Frame, bool) {
+func (r *Router) getDest(connId uint) (*ChannelConn, bool) {
 	r.destMutex.RLock()
 	defer r.destMutex.RUnlock()
 
@@ -78,7 +111,7 @@ func (r *Router) getDest(connId uint) (chan Frame, bool) {
 }
 
 // make map put threadsafe
-func (r *Router) createDest(frames chan Frame) uint {
+func (r *Router) createDest(frames *ChannelConn) uint {
 	r.destMutex.Lock()
 	defer r.destMutex.Unlock()
 

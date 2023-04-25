@@ -12,7 +12,7 @@ func TestPacked(t *testing.T) {
 	in := make(chan Frame, 1)
 
 	frame := Frame{
-		ConnectionId:   0,
+		ConnectionId:   3,
 		DropConnection: true,
 		Data:           []byte{'i', 'o'},
 	}

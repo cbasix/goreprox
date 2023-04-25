@@ -3,56 +3,61 @@ package main
 import "testing"
 
 func TestRouterRouting(t *testing.T) {
-	shared := make(chan Frame, 2)
-	client1 := make(chan Frame, 1)
-	client2 := make(chan Frame, 1)
+	shared := CreateConn(2, 2)
+	client1 := CreateConn(1, 1)
+	client2 := CreateConn(1, 1)
 	router := CreateRouter(shared)
 	router.createDest(client1)
 	router.createDest(client2)
 
-	shared <- Frame{ConnectionId: 1, Data: []byte{'1'}}
-	shared <- Frame{ConnectionId: 2, Data: []byte{'2'}}
-	go router.route()
+	shared.in <- Frame{ConnectionId: 1, Data: []byte{'1'}}
+	shared.in <- Frame{ConnectionId: 2, Data: []byte{'2'}}
 
-	if (<-client1).Data[0] != '1' {
+	for i := 0; i < 2; i++ {
+		router.route()
+	}
+
+	if (<-client1.out).Data[0] != '1' {
 		t.Errorf("Client 1 received invalid frame.")
 	}
 
-	if (<-client2).Data[0] != '2' {
+	if (<-client2.out).Data[0] != '2' {
 		t.Errorf("Client 2 received invalid frame.")
 	}
 }
 
 func TestRouterJoin(t *testing.T) {
-	shared := make(chan Frame, 2)
-	client1 := make(chan Frame, 1)
-	client2 := make(chan Frame, 1)
+	shared := CreateConn(2, 2)
+	client1 := CreateConn(1, 1)
+	client2 := CreateConn(1, 1)
 	router := CreateRouter(shared)
 	router.createDest(client1)
 	router.createDest(client2)
 
-	client1 <- Frame{ConnectionId: 1, Data: []byte{1}}
-	client2 <- Frame{ConnectionId: 2, Data: []byte{2}}
-	go router.join()
+	client1.in <- Frame{ConnectionId: 1, Data: []byte{1}}
+	client2.in <- Frame{ConnectionId: 2, Data: []byte{2}}
 
-	<-shared
-	<-shared
+	router.join()
+
+	<-shared.out
+	<-shared.out
 }
 
 func TestRouterRouteOrCreate(t *testing.T) {
-	shared := make(chan Frame, 2)
-	client := make(chan Frame, 1)
+	shared := CreateConn(2, 2)
+	client := CreateConn(1, 1)
 	router := CreateRouter(shared)
+	router.createConnection = func() ChannelConn { return client }
 
-	shared <- Frame{ConnectionId: 1, Data: []byte{'1'}}
-	go router.routeOrCreate(func() chan Frame { return client })
+	shared.in <- Frame{ConnectionId: 1, Data: []byte{'1'}}
+	router.route()
 
-	<-client
+	<-client.out
 }
 
 func TestMapFunctions(t *testing.T) {
-	shared := make(chan Frame)
-	client := make(chan Frame)
+	shared := CreateConn(0, 0)
+	client := CreateConn(0, 0)
 	router := CreateRouter(shared)
 
 	connId := router.createDest(client)
